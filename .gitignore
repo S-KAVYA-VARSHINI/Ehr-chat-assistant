@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+.streamlit/secrets.toml
+*.key
+*.pem
+*.crt
+data/uploads/
+data/reports/
+data/encrypted/
+data/encrypted_reports/
+*.faiss
+*.json.enc
+.DS_Store
