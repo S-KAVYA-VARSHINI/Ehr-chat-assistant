@@ -1,4 +1,3 @@
-
 import os
 import re
 import uuid
@@ -8,7 +7,7 @@ from pathlib import Path
 import streamlit as st
 from huggingface_hub import snapshot_download
 import torch
-import faiss
+import numpy as np
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
@@ -378,16 +377,9 @@ def process_report(uploaded_file):
         show_progress_bar=False
     )
 
-    embeddings = embeddings.astype(
-        "float32"
-    )
-
-    index = faiss.IndexFlatIP(
-        embeddings.shape[1]
-    )
-
-    index.add(
-        embeddings
+    embeddings = np.asarray(
+        embeddings,
+        dtype="float32"
     )
 
     report_id = str(
@@ -395,8 +387,13 @@ def process_report(uploaded_file):
     )
 
     st.session_state.report_id = report_id
+
     st.session_state.report_chunks = chunks
-    st.session_state.report_index = index
+
+    # Store normalized embeddings directly.
+    # Since embeddings are normalized,
+    # dot product is cosine similarity.
+    st.session_state.report_index = embeddings
 
     return report_id, chunks
 
@@ -421,31 +418,48 @@ def retrieve_report_evidence(
         [query],
         normalize_embeddings=True,
         show_progress_bar=False
-    ).astype("float32")
+    )
+
+    query_embedding = np.asarray(
+        query_embedding,
+        dtype="float32"
+    )[0]
 
     k = min(
         top_k,
         len(st.session_state.report_chunks)
     )
 
-    scores, indices = (
-        st.session_state.report_index.search(
-            query_embedding,
-            k
-        )
+    # Cosine similarity.
+    #
+    # Both report embeddings and query embedding
+    # are normalized, so dot product gives cosine similarity.
+    similarities = np.dot(
+        st.session_state.report_index,
+        query_embedding
     )
+
+    top_indices = np.argsort(
+        similarities
+    )[::-1][:k]
+
+    scores = similarities[top_indices]
+
+    indices = top_indices
 
     evidence = []
 
     for score, index in zip(
-        scores[0],
-        indices[0]
+        scores,
+        indices
     ):
 
         if index < 0:
             continue
 
-        item = st.session_state.report_chunks[index]
+        item = st.session_state.report_chunks[
+            int(index)
+        ]
 
         evidence.append({
             "text": item["text"],
@@ -865,7 +879,9 @@ with st.sidebar:
         ):
 
             st.session_state.report_id = None
+
             st.session_state.report_chunks = []
+
             st.session_state.report_index = None
 
             st.rerun()
@@ -940,6 +956,7 @@ if user_message:
                 if intent == "URGENT_CARE":
 
                     answer = urgent_response()
+
                     verified = False
 
                 elif (
